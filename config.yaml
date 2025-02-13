@@ -1,0 +1,4 @@
+bot_token: "xxxxxxxxx"  # 替换为你的真实token
+allowed_users: []  # 暂时留空
+version: "1.0.0"
+targetChatID: -xxxxxx  # 你的 chat_id
