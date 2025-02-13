@@ -3,35 +3,21 @@ package bot
 import (
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"telegram-shell-bot/types"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"gopkg.in/yaml.v2"
 )
 
 type Bot struct {
 	api        *tgbotapi.BotAPI
-	yamlConfig *Config
+	userConfig *types.UserConfig
 }
 
-// Config 结构体用于映射 config.yaml 文件
-type Config struct {
-	TargetChatID    int64  `yaml:"targetChatID"`    // 映射 targetChatID 字段
-	StartCmdMessage string `yaml:"startCmdMessage"` // 映射 startCmdMessage 字段
-}
-
-func New(token string) (*Bot, error) {
-	// 读取配置文件
-	config, err := readConfig("config.yaml")
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config: %w", err)
-	}
-
-	log.Printf("Target Chat ID: [%d]", config.TargetChatID)
-
-	api, err := tgbotapi.NewBotAPI(token)
+func New(config *types.UserConfig) (*Bot, error) {
+	api, err := tgbotapi.NewBotAPI(config.Token)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create bot: %w", err)
 	}
@@ -40,72 +26,86 @@ func New(token string) (*Bot, error) {
 	api.Debug = true
 
 	// 打印机器人信息
-	log.Printf("Bot Information:")
+	log.Printf("Bot Information for %s:", config.Name)
 	log.Printf("- Username: %s", api.Self.UserName)
 	log.Printf("- First Name: %s", api.Self.FirstName)
 	log.Printf("- Can Join Groups: %v", api.Self.CanJoinGroups)
 	log.Printf("- Can Read Group Messages: %v", api.Self.CanReadAllGroupMessages)
+	log.Printf("- Target Chat ID: [%d]", config.TargetChatID)
 
-	return &Bot{api: api, yamlConfig: config}, nil
+	return &Bot{
+		api:        api,
+		userConfig: config,
+	}, nil
 }
 
-// 读取配置文件的函数
-func readConfig(filePath string) (*Config, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
+// StartAll 启动所有配置的机器人
+func StartAll(configs []types.UserConfig) error {
+	var wg sync.WaitGroup
+	errors := make(chan error, len(configs))
 
-	var config Config
-	decoder := yaml.NewDecoder(file)
-	if err := decoder.Decode(&config); err != nil {
-		return nil, err
+	for _, config := range configs {
+		wg.Add(1)
+		go func(cfg types.UserConfig) {
+			defer wg.Done()
+
+			bot, err := New(&cfg)
+			if err != nil {
+				errors <- fmt.Errorf("failed to create bot %s: %w", cfg.Name, err)
+				return
+			}
+
+			if err := bot.Start(); err != nil {
+				errors <- fmt.Errorf("bot %s error: %w", cfg.Name, err)
+			}
+		}(config)
 	}
-	return &config, nil
+
+	// 等待所有 goroutine 完成
+	go func() {
+		wg.Wait()
+		close(errors)
+	}()
+
+	// 收集错误
+	for err := range errors {
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (b *Bot) Start() error {
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 
-	// 添加所有类型的更新
 	updates := b.api.GetUpdatesChan(u)
 
-	log.Println("Bot is now running...") // 添加启动日志
+	log.Printf("Bot %s is now running...", b.userConfig.Name)
 
 	for update := range updates {
-		// 打印所有收到的更新，用于调试
-		log.Printf("收到了消息通知: %+v", update)
-
 		if update.Message == nil {
-			log.Println("收到了空消息，跳过...")
 			continue
 		}
 
-		// 打印消息详情
-		log.Printf("消息标题，MessageID: [%d] %s (from: %s, chat_id: %d)",
+		log.Printf("[%s] 收到消息: MessageID: [%d] %s (from: %s, chat_id: %d)",
+			b.userConfig.Name,
 			update.Message.MessageID,
 			update.Message.Text,
 			update.Message.From.UserName,
 			update.Message.Chat.ID)
 
-		// 检查是否是直接命令
 		if update.Message.IsCommand() {
-			log.Printf("消息【命令】: %s", update.Message.Command())
-			b.sendMessage(update.Message.Chat.ID, b.yamlConfig.StartCmdMessage)
+			log.Printf("[%s] 命令消息: %s", b.userConfig.Name, update.Message.Command())
+
+			if b.userConfig.StartCmdMessage != "" {
+				b.sendMessage(update.Message.Chat.ID, b.userConfig.StartCmdMessage)
+			}
 			continue
 		}
 
-		// 检查实体，包含（/start @username #example URL 代码块  )，用来处理更复杂的逻辑
-		// Hello @username! Check out #example and visit http://example.com.
-		if len(update.Message.Entities) > 0 {
-			for _, entity := range update.Message.Entities {
-				log.Printf("Entity type: %s, offset: %d, length: %d", entity.Type, entity.Offset, entity.Length)
-			}
-		}
-
-		// 检查消息中是否包含机器人的用户名
 		b.handleCommand(update.Message)
 	}
 	return nil
@@ -129,8 +129,8 @@ func (b *Bot) handleCommand(message *tgbotapi.Message) {
 		return
 	}
 
-	// 使用从配置文件中读取的 targetChatID
-	targetChatID := b.yamlConfig.TargetChatID
+	// 使用用户配置中的 targetChatID
+	targetChatID := b.userConfig.TargetChatID
 
 	// 构建转发的消息内容，包含发送者信息
 	senderInfo := fmt.Sprintf("来自用户: @%s", message.From.UserName)

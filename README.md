@@ -9,6 +9,12 @@
   - 图片
   - 文件
   - 语音消息
+  - 贴纸消息
+  - GIF 动画
+  - 视频
+  - 文档
+  - 投票
+  - 位置信息
 - 转发的消息会包含原始发送者的信息
 - 支持命令过滤（忽略 /start 等命令消息）
 - 支持配置文件动态设置目标聊天 ID
@@ -17,10 +23,16 @@
 
 在 config.yaml 中配置以下信息：
 
-    bot_token: "your-bot-token"  # Telegram 机器人的访问令牌
-    allowed_users: []  # 预留的允许用户列表（暂未使用）
     version: "1.0.0"  # 版本号
-    targetChatID: -1234567890  # 目标转发的聊天 ID（群组ID为负数，个人ID为正数）
+    users:  # 支持多用户配置
+      - name: "user1"  # 用户标识
+        token: "your-bot-token-1"  # 机器人的访问令牌
+        targetChatID: -1234567890  # 目标转发的聊天 ID
+        startCmdMessage: "您好，我在呢"  # 启动命令的回复消息
+      - name: "user2"
+        token: "your-bot-token-2"
+        targetChatID: -1234567890
+        startCmdMessage: "Hello, I'm here"
 
 ## 使用方法
 

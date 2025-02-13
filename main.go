@@ -12,17 +12,13 @@ func main() {
 		log.Fatalf("Failed to initialize config: %v", err)
 	}
 
-	// 打印token前几个字符，用于调试
-	log.Printf("Bot token prefix: %s...", config.AppConfig.BotToken[:10])
-
-	// 创建并启动机器人
-	b, err := bot.New(config.AppConfig.BotToken)
-	if err != nil {
-		log.Fatalf("Failed to create bot: %v", err)
+	// 打印每个机器人的 token 前缀（用于调试）
+	for _, user := range config.AppConfig.Users {
+		log.Printf("Bot %s token prefix: %s...", user.Name, user.Token[:10])
 	}
 
-	log.Println("Bot started...")
-	if err := b.Start(); err != nil {
-		log.Fatalf("Bot error: %v", err)
+	// 启动所有机器人
+	if err := bot.StartAll(config.AppConfig.Users); err != nil {
+		log.Fatalf("Failed to start bots: %v", err)
 	}
 }

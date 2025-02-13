@@ -1,4 +1,14 @@
-bot_token: "xxxxxxxxx"  # 替换为你的真实token
-allowed_users: []  # 暂时留空
+# 版本号
 version: "1.0.0"
-targetChatID: -xxxxxx  # 你的 chat_id
+
+# 支持多用户，每个用户一个配置
+users:
+  - name: "少奶奶"
+    token: "xxxxx"
+    targetChatID: -1234567
+    startCmdMessage: "(*￣︶￣)😊 您好，我在呢，请说... "
+
+  - name: "少爷"
+    token: "yyyyy"
+    targetChatID: -1234567
+    startCmdMessage: "(*￣︶￣)😊 您好，我在呢，请说... "
