@@ -69,3 +69,12 @@
 - [ ] 支持更多消息类型（视频、贴纸等）
 - [ ] 添加消息过滤功能
 - [ ] 支持多目标转发 
+
+## 发布脚本：
+```bash
+git pull
+go mod tidy
+GOOS=linux GOARCH=amd64 go build -o app main.go
+zip app.zip app
+./upload.sh app.zip
+```
