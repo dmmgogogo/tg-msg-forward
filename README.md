@@ -76,5 +76,14 @@ git pull
 go mod tidy
 GOOS=linux GOARCH=amd64 go build -o app main.go
 zip app.zip app
+```
+
+## 上传脚本：
+```bash
 ./upload.sh app.zip
 ```
+
+## 运行脚本：
+```bash
+nohup ./app > output.log 2>&1 &
+```   
