@@ -1,14 +1,18 @@
+# 项目名称
+project_name: "telegram-shell-bot"
+
 # 版本号
 version: "1.0.0"
 
-# 支持多用户，每个用户一个配置
-users:
-  - name: "少奶奶"
-    token: "xxxxx"
-    targetChatID: -1234567
-    startCmdMessage: "(*￣︶￣)😊 您好，我在呢，请说... "
+# 数据库配置
+db_path: "data/bot.db"
 
-  - name: "少爷"
-    token: "yyyyy"
-    targetChatID: -1234567
-    startCmdMessage: "(*￣︶￣)😊 您好，我在呢，请说... "
+# 管理员机器人配置
+admin_bot_name: "xxxxx"
+admin_bot_token: ""
+
+# 管理员用户名列表
+admin_name: 
+  - "admin"
+  - "another_admin"
+  - "third_admin"

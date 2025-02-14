@@ -2,14 +2,17 @@ package config
 
 import (
 	"os"
-	"telegram-shell-bot/types"
 
 	"gopkg.in/yaml.v2"
 )
 
 type Config struct {
-	Version string             `yaml:"version"`
-	Users   []types.UserConfig `yaml:"users"`
+	ProjectName   string   `yaml:"project_name"`
+	Version       string   `yaml:"version"`
+	DBName        string   `yaml:"db_name"`
+	DBPath        string   `yaml:"db_path"`
+	AdminBotToken string   `yaml:"admin_bot_token"`
+	AdminName     []string `yaml:"admin_name"`
 }
 
 var AppConfig Config

@@ -21,18 +21,23 @@
 
 ## 配置说明
 
-在 config.yaml 中配置以下信息：
+在 config.yaml 中配置基本信息：
 
-    version: "1.0.0"  # 版本号
-    users:  # 支持多用户配置
-      - name: "user1"  # 用户标识
-        token: "your-bot-token-1"  # 机器人的访问令牌
-        targetChatID: -1234567890  # 目标转发的聊天 ID
-        startCmdMessage: "您好，我在呢"  # 启动命令的回复消息
-      - name: "user2"
-        token: "your-bot-token-2"
-        targetChatID: -1234567890
-        startCmdMessage: "Hello, I'm here"
+    project_name: "telegram-shell-bot"  # 项目名称
+    version: "1.0.0"                    # 版本号
+    db_name: "telegram_shell_bot"       # 数据库名称
+    db_path: "data/bot.db"             # 数据库路径
+
+使用命令行工具管理机器人配置：
+
+# 添加机器人配置
+go run cmd/botctl/main.go add -name "少奶奶" -token "your-token" -chat -4604394005
+
+# 列出所有配置
+go run cmd/botctl/main.go list
+
+# 删除配置
+go run cmd/botctl/main.go delete -name "少奶奶"
 
 ## 使用方法
 
@@ -74,7 +79,8 @@
 ```bash
 git pull
 go mod tidy
-GOOS=linux GOARCH=amd64 go build -o app main.go
+# GOOS=linux GOARCH=amd64 go build -o app main.go
+CC=x86_64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o app main.go
 zip app.zip app
 ```
 
@@ -87,3 +93,42 @@ zip app.zip app
 ```bash
 nohup ./app > output.log 2>&1 &
 ```   
+
+## docker部署
+```bash
+docker run -it --rm -v /Users/mmx/Documents/work/TOOLS/tg_msg_forward:/workspace ubuntu:20.04 bash
+
+# 安装依赖工具
+apt-get install -y wget
+
+# 下载 Go 最新版本（可以更改为你需要的版本）
+cd /tmp
+wget https://go.dev/dl/go1.24.0.linux-amd64.tar.gz
+
+# 删除旧版 Go
+rm -rf /usr/local/go
+
+# 解压安装新的 Go 版本
+tar -C /usr/local -xzf go1.24.0.linux-amd64.tar.gz
+
+# 配置 Go 环境变量
+export PATH=$PATH:/usr/local/go/bin
+
+# 确保环境变量设置正确
+echo "export PATH=\$PATH:/usr/local/go/bin" >> ~/.bashrc
+source ~/.bashrc
+
+# 检查 Go 版本
+go version
+
+# 安装其他依赖工具
+apt-get install -y ca-certificates
+apt-get install -y gcc-x86-64-linux-gnu
+apt-get install -y build-essential
+
+which x86_64-linux-gnu-gcc
+
+cd /workspace
+CC=x86_64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o app main.go
+
+```

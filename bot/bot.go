@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"telegram-shell-bot/db"
 	"telegram-shell-bot/types"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -14,7 +15,18 @@ import (
 type Bot struct {
 	api        *tgbotapi.BotAPI
 	userConfig *types.UserConfig
+	running    bool
+	stopChan   chan struct{}
+	mu         sync.Mutex
+	updates    tgbotapi.UpdatesChannel
 }
+
+var (
+	// 存储所有运行中的机器人
+	runningBots = make(map[string]*Bot)
+	// 用于保护 runningBots 的互斥锁
+	botsLock sync.RWMutex
+)
 
 func New(config *types.UserConfig) (*Bot, error) {
 	api, err := tgbotapi.NewBotAPI(config.Token)
@@ -26,89 +38,87 @@ func New(config *types.UserConfig) (*Bot, error) {
 	api.Debug = true
 
 	// 打印机器人信息
-	log.Printf("Bot Information for %s:", config.Name)
-	log.Printf("- Username: %s", api.Self.UserName)
-	log.Printf("- First Name: %s", api.Self.FirstName)
-	log.Printf("- Can Join Groups: %v", api.Self.CanJoinGroups)
-	log.Printf("- Can Read Group Messages: %v", api.Self.CanReadAllGroupMessages)
+	log.Printf("消息转发Bot [%s] 配置中...", config.Name)
+	log.Printf("- Username: [%s]", api.Self.UserName)
+	log.Printf("- First Name: [%s]", api.Self.FirstName)
+	log.Printf("- Can Join Groups: [%v]", api.Self.CanJoinGroups)
+	log.Printf("- Can Read Group Messages: [%v]", api.Self.CanReadAllGroupMessages)
 	log.Printf("- Target Chat ID: [%d]", config.TargetChatID)
 
 	return &Bot{
 		api:        api,
 		userConfig: config,
+		stopChan:   make(chan struct{}),
 	}, nil
 }
 
 // StartAll 启动所有配置的机器人
 func StartAll(configs []types.UserConfig) error {
-	var wg sync.WaitGroup
-	errors := make(chan error, len(configs))
+	botsLock.Lock()
+	defer botsLock.Unlock()
 
 	for _, config := range configs {
-		wg.Add(1)
-		go func(cfg types.UserConfig) {
-			defer wg.Done()
-
-			bot, err := New(&cfg)
-			if err != nil {
-				errors <- fmt.Errorf("failed to create bot %s: %w", cfg.Name, err)
-				return
-			}
-
-			if err := bot.Start(); err != nil {
-				errors <- fmt.Errorf("bot %s error: %w", cfg.Name, err)
-			}
-		}(config)
-	}
-
-	// 等待所有 goroutine 完成
-	go func() {
-		wg.Wait()
-		close(errors)
-	}()
-
-	// 收集错误
-	for err := range errors {
+		bot, err := New(&config)
 		if err != nil {
-			return err
+			log.Printf("Failed to create bot %s: %v", config.Name, err)
+			continue
 		}
+		runningBots[config.Name] = bot
+		go bot.Start()
 	}
 
 	return nil
 }
 
 func (b *Bot) Start() error {
+	b.mu.Lock()
+	if b.running {
+		b.mu.Unlock()
+		return nil
+	}
+	b.running = true
+	b.stopChan = make(chan struct{})
+	b.mu.Unlock()
+
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 
-	updates := b.api.GetUpdatesChan(u)
+	b.updates = b.api.GetUpdatesChan(u)
 
-	log.Printf("Bot %s is now running...", b.userConfig.Name)
+	log.Printf("消息转发Bot [%s] 已启动...", b.userConfig.Name)
 
-	for update := range updates {
-		if update.Message == nil {
-			continue
-		}
-
-		log.Printf("[%s] 收到消息: MessageID: [%d] %s (from: %s, chat_id: %d)",
-			b.userConfig.Name,
-			update.Message.MessageID,
-			update.Message.Text,
-			update.Message.From.UserName,
-			update.Message.Chat.ID)
-
-		if update.Message.IsCommand() {
-			log.Printf("[%s] 命令消息: %s", b.userConfig.Name, update.Message.Command())
-
-			if b.userConfig.StartCmdMessage != "" {
-				b.sendMessage(update.Message.Chat.ID, b.userConfig.StartCmdMessage)
+	for {
+		select {
+		case <-b.stopChan:
+			log.Printf("消息转发Bot [%s] 已停止...", b.userConfig.Name)
+			return nil
+		case update, ok := <-b.updates:
+			if !ok {
+				return nil
 			}
-			continue
-		}
+			if update.Message == nil {
+				continue
+			}
 
-		b.handleCommand(update.Message)
+			log.Printf("[%s] 收到消息: MessageID: [%d] %s (from: %s, chat_id: %d)",
+				b.userConfig.Name,
+				update.Message.MessageID,
+				update.Message.Text,
+				update.Message.From.UserName,
+				update.Message.Chat.ID)
+
+			if update.Message.IsCommand() {
+				log.Printf("[%s] 命令消息: %s", b.userConfig.Name, update.Message.Command())
+
+				if b.userConfig.StartCmdMessage != "" {
+					b.sendMessage(update.Message.Chat.ID, b.userConfig.StartCmdMessage)
+				}
+				continue
+			}
+
+			b.handleCommand(update.Message)
+		}
 	}
-	return nil
 }
 
 func (b *Bot) handleCommand(message *tgbotapi.Message) {
@@ -246,4 +256,72 @@ func (b *Bot) sendMessage(chatID int64, text string) {
 	if err != nil {
 		log.Printf("Failed to send message: %v", err)
 	}
+}
+
+// RestartBots 重新启动所有机器人
+func RestartBots() error {
+	botsLock.Lock()
+	defer botsLock.Unlock()
+
+	log.Println("开始重启所有机器人...")
+
+	// 停止所有运行中的机器人
+	for name, bot := range runningBots {
+		log.Printf("正在停止机器人: %s", name)
+		if bot != nil {
+			bot.Stop()
+		}
+	}
+
+	// 清空运行中的机器人列表
+	runningBots = make(map[string]*Bot)
+
+	// 获取最新配置
+	configs, err := db.GetAllConfigs()
+	if err != nil {
+		return fmt.Errorf("获取配置失败: %w", err)
+	}
+
+	log.Printf("获取到 %d 个机器人配置", len(configs))
+
+	// 启动所有机器人
+	for _, config := range configs {
+		log.Printf("正在启动机器人: %s", config.Name)
+		bot, err := New(&config)
+		if err != nil {
+			log.Printf("创建机器人失败 %s: %v", config.Name, err)
+			continue
+		}
+		runningBots[config.Name] = bot
+		go bot.Start()
+	}
+
+	log.Println("所有机器人重启完成")
+	return nil
+}
+
+// Stop 停止机器人
+func (b *Bot) Stop() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if !b.running {
+		return
+	}
+
+	log.Printf("正在停止机器人 [%s]...", b.userConfig.Name)
+
+	// 先标记为非运行状态
+	b.running = false
+
+	// 关闭停止通道
+	close(b.stopChan)
+
+	// 停止接收更新
+	b.api.StopReceivingUpdates()
+
+	// 不再等待清空通道
+	b.updates = nil
+
+	log.Printf("消息转发Bot [%s] 已停止", b.userConfig.Name)
 }
