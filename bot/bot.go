@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"telegram-shell-bot/db"
@@ -122,7 +123,7 @@ func (b *Bot) Start() error {
 }
 
 func (b *Bot) handleCommand(message *tgbotapi.Message) {
-	log.Printf("Handling command from message: %s", message.Text)
+	log.Printf("🤖机器人[%s]接收到消息: %s", b.userConfig.Name, message.Text)
 
 	// 检查是否有任何内容需要处理
 	hasContent := message.Text != "" ||
@@ -140,17 +141,57 @@ func (b *Bot) handleCommand(message *tgbotapi.Message) {
 	}
 
 	// 使用用户配置中的 targetChatID
-	targetChatID := b.userConfig.TargetChatID
+	var targetChatID int64
+	var senderInfo string
+	var forwardText string
 
-	// 构建转发的消息内容，包含发送者信息
-	senderInfo := fmt.Sprintf("来自用户: @%s", message.From.UserName)
-	if message.From.UserName == "" {
-		senderInfo = fmt.Sprintf("来自用户: %s %s", message.From.FirstName, message.From.LastName)
+	// 获取当前message的chatId
+	if message.Chat.ID != b.userConfig.TargetChatID {
+		// 说明来自转发
+		targetChatID = b.userConfig.TargetChatID
+
+		// 构建转发的消息内容，包含发送者信息
+		senderInfo = "⚠️回复这条消息跟客户沟通⚠️"
+		senderInfo += "\n——————————————"
+		senderInfo += fmt.Sprintf("\n来自用户: @%s", message.From.UserName)
+		if message.From.UserName == "" {
+			senderInfo = fmt.Sprintf("来自用户: %s %s", message.From.FirstName, message.From.LastName)
+		}
+
+		// 加上群组ID，将来回复消息的时候需要用到
+		senderInfo += fmt.Sprintf("\n群组ID: %d", message.Chat.ID)
+		forwardText = fmt.Sprintf("%s\n\n消息内容：", senderInfo)
+	} else {
+		// 说明来自转发群里面的管理人员回复
+		if message.ReplyToMessage != nil {
+			// 从回复的消息中提取群组ID
+			lines := strings.Split(message.ReplyToMessage.Text, "\n")
+			for _, line := range lines {
+				if strings.HasPrefix(line, "群组ID: ") {
+					idStr := strings.TrimPrefix(line, "群组ID: ")
+					if id, err := strconv.ParseInt(idStr, 10, 64); err == nil {
+						targetChatID = id
+						log.Printf("🤖机器人[%s]提取到目标群组ID: %d", b.userConfig.Name, targetChatID)
+						break
+					}
+				}
+			}
+
+			if targetChatID == b.userConfig.TargetChatID {
+				log.Printf("推断：测试信息，不需要转发", b.userConfig.Name)
+				return
+			}
+		}
+	}
+
+	if targetChatID == 0 {
+		log.Printf("🤖机器人[%s]没有找到目标群组ID", b.userConfig.Name)
+		return
 	}
 
 	// 处理文本消息
 	if message.Text != "" {
-		forwardText := fmt.Sprintf("%s\n\n消息内容：%s", senderInfo, message.Text)
+		forwardText += message.Text
 		msg := tgbotapi.NewMessage(targetChatID, forwardText)
 		b.sendWithLog(msg, "text message")
 	}
