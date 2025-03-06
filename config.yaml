@@ -1,5 +1,6 @@
 # 项目名称
-project_name: "telegram-shell-bot"
+project_name: "tg-msg-forward"
+project_desc: "个人定制版本"
 
 # 版本号
 version: "1.0.0"
